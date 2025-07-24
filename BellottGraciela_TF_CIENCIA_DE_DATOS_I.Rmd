@@ -1,0 +1,343 @@
+---
+title: "Ciencia de Datos I"
+subtitle: "Trabajo Final"
+author: "Graciela Bellotti"
+date: "`r format(Sys.Date(), '%d-%m-%Y')`"
+output: html_document
+#  tufte::tufte_html: default
+ # tufte::tufte_handout:
+  #  citation_package: natbib
+   # latex_engine: xelatex
+  #tufte::tufte_book:
+    #citation_package: natbib
+    #latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+# Configuración del entorno
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.width = 10, fig.height = 6)
+
+```
+
+## Consigna
+
+Ejercicio de análisis con tema libre. Eje de análisis: Resolución (o intento) de una pregunta-problema sobre el tema en cuestión.
+
+## Planteo de la pregunta y mínima presentación del tema
+
+A continuación se pretende realizar un análisis exploratorio de las diferencias en la valorización de la Canasta Básica Alimentaria (CBA) y Canasta Básica Total (CBT) por parte del Instituto de Estadísticas y Censos (INDEC) y del Instituto de Estadística y Censos de la CABA (IDECBA). El valor de la CBT conforma el umbral de ingresos para medir si un hogar se encuentra en situación de pobreza, mientras que el de la CBA es el valor de referencia para identificar hogares en situación de indigencia.
+
+En la estimación de los valores de las canastas intervienen:
+
+-   Los productos que conforman la Canasta Basica Alimentaria,
+-   El coeficiente de Engel (la relación entre los gastos de la CBA y los Gastos Totales) en función del cual se calcula la CBT y
+-   La evolución del indice de precios que actualiza los valores de las canastas.
+
+Con relación a esto último una diferencia importante entre las metodologías de ambos organismos consiste en la utilización de diferentes índices de precios. El valor del IPC de INDEC es cuestionado por utilizar una estructura de ponderaciones desactualizada, basada en la Encuesta Nacional de Gastos de los Hogares (ENGHO) 2004/2005, mientras que IDECBA utiliza la ENGHO 2017-2018 a tal fin.
+
+Cabe recordar que la medición de la pobreza tiene como fuente de captación la EPH donde se consulta a los hogares los ingresos percibidos durante los últimos 30 días. Estos son comparados con el valor de las Canasta Básica Alimentaria y la Canasta Básica Total. Para saber cuál es el valor de la canasta de cada hogar en función de sus integrantes, se cuantifican cuantos “adultos equivalentes”[^1] tiene cada hogar en función del sexo y edad de cada uno de sus integrantes. Ambos organismos, publican el valor actualizado de la canasta de hogares conformados por diferentes integrantes, tomando en el presente trabajo el “Hogar 2” del INDEC (compuesto por un varón de 35 años, una mujer de 31 años, un hijo de 6 años y una hija de 8 años) y al “Hogar 1” de CABA (una mujer y un varón de 35 años de edad, con dos hijos varones de 9 y 6 años).
+
+[^1]: Para mayor información consultar el documento metodológico disponible [aqui.](https://www.indec.gob.ar/ftp/cuadros/sociedad/EPH_metodologia_22_pobreza.pdf)
+
+Teniendo en cuenta estos aspectos, a continuación se analiza:
+
+-   Cual es la diferencia en los valores de las canastas calculados por ambos organismos.\
+-   Como evoluciona la diferencia a lo largo del tiempo.
+
+Como periodo de análisis se toma en consideración el período abarcado desde noviembre 2023 - mayo 2025.
+
+## Descripción de los pasos realizados para encarar el problema, sin eludir posibles obstáculos durante el proceso.
+
+A continuación se describen los pasos realizados para la realización del presente informe.
+
+```{r}
+#librerias
+
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(scales)
+library(readxl)
+library(gt)
+library(gtExtras)
+library(zoo)
+library(viridis)
+library(hrbrthemes)
+library(paletteer)
+
+```
+
+## Proyecto de trabajo que contenga (en formato script o rmarkdown) el recorrido por al menos algunas de las siguientes funciones:
+
+### Importación (por ejemplo: read.csv(), read.table(), o aquellas de los paquetes data.table, readxl, readr, haven, foreign, entre otros)
+
+1)  En primer lugar descargamos las bases de datos a utilizar:
+
+-   Evolucion del valor de la CBA y la CBT INDEC, la cual puede ser consultada en este [enlace](https://www.indec.gob.ar/indec/web/Nivel4-Tema-4-43-149);
+
+-   Evolución del valor de la CBA y la CBT de IDECBA , la cual puede ser consultada en este [enlace](https://www.estadisticaciudad.gob.ar/eyc/?cat=161)
+
+2)  En segundo lugar importamos las bases de datos mediante la función read_excel(). Nos quedamos con el valor de las Canastas correspondientes al “Hogar 2” de INDEC (compuesto por un varón de 35 años, una mujer de 31 años, un hijo de 6 años y una hija de 8 años. ) y al “Hogar 1” de CABA (una mujer y un varón de 35 años de edad, ambos económicamente activos y propietarios de la vivienda, con dos hijos varones de 9 y 6 años), en tanto son los más similares entre sí.
+
+```{r cargo bases}
+INDEC <- read_excel("BASES/Canastas_INDEC.xls", sheet = "Hogares", 
+                    skip = 7, col_names = F, col_types = c ("date","numeric","numeric","numeric","numeric","numeric","numeric","numeric")) %>% 
+                    select(1,2,6) %>% 
+                    rename(Fecha = "...1", CBA_INDEC = "...2", CBT_INDEC = "...6")
+
+#CABA 
+CABA <- read_excel("BASES/Canastas_CABA.xlsx", col_names = F)
+
+```
+
+### Limpieza, tratamiento y transformación de datos con tidyverse (por ejemplo: filter(), select(), mutate(), group_by(), summarise(), count(), pivot_longer/wider())
+
+3)  Luego pasamos a las tareas de transformar y modificar las bases importadas. Modificamos el campo Fecha y obtengo Mes y Año en ambas bases que nos permitan en un mismo data frame las columnas con los valores de INDEC y CABA. Para ello, utilizamos las funciones de rename(), mutate(), case_when(), select(), entre otras.
+
+```{r limpieza y transformación INDEC}
+# Cargamos los datos de IPC y Canastas
+#INDEC me quedo con las canastas del Hogar tipo 1: 
+
+
+INDEC <- INDEC %>%
+  mutate(Fecha = format(Fecha, "%Y-%m"),
+         CBA_INDEC = as.integer(CBA_INDEC),
+         CBT_INDEC = as.integer(CBT_INDEC))
+
+INDEC <- INDEC[1:110,] 
+
+
+```
+
+```{r limpieza y transformación IDECBA}
+
+#CBA
+CABA_CBA <- CABA[7:128,1:2] %>% 
+  rename(Fecha = ...1, CBA_CABA = ...2) %>% 
+  mutate(Mes = case_when(Fecha == "Enero" ~ "01",
+                         Fecha == "Febrero" ~ "02",
+                         Fecha == "Marzo" ~ "03",
+                         Fecha == "Abril" ~ "04",
+                         Fecha == "Mayo" ~ "05",
+                         Fecha == "Junio" ~ "06",
+                         Fecha == "Julio" ~ "07",
+                         Fecha == "Agosto" ~ "08",
+                         Fecha == "Septiembre" ~ "09",
+                         Fecha == "Octubre" ~ "10",
+                         Fecha == "Noviembre" ~ "11",
+                         Fecha == "Diciembre" ~ "12"),
+         Anio = case_when(
+                        row_number() <= 12 ~ 2016,
+                        row_number() > 12+1 & row_number() <= (12*2)+1 ~ 2017,
+                        row_number() >(12*2)+2 & row_number() <= (12*3)+2 ~ 2018,
+                        row_number() > (12*3)+3 & row_number() <= (12*4)+3 ~ 2019,
+                        row_number() > (12*4)+4 & row_number() <= (12*5)+4 ~ 2020,
+                        row_number() > (12*5)+5 & row_number() <= (12*6)+5 ~ 2021,
+                        row_number() > (12*6)+6 & row_number() <= (12*7)+6 ~ 2022,
+                        row_number() > (12*7)+7 & row_number() <= (12*8)+7 ~ 2023,
+                        row_number() > (12*8)+8 & row_number() <= (12*9)+8 ~ 2024,
+                        row_number() > (12*9)+9 & row_number() <= (12*10)+9 ~ 2025
+                           ),
+         AnioMes = paste(Anio, Mes, sep = "-"),
+         CBA_CABA = as.integer(CBA_CABA),
+         ) %>% 
+  filter(!is.na(CBA_CABA))
+
+
+#CBT
+CABA_CBT <- CABA[131:252,1:2] %>% 
+  rename(Fecha = ...1, CBT_CABA = ...2) %>% 
+  mutate(Mes = case_when(Fecha == "Enero" ~ "01",
+                         Fecha == "Febrero" ~ "02",
+                         Fecha == "Marzo" ~ "03",
+                         Fecha == "Abril" ~ "04",
+                         Fecha == "Mayo" ~ "05",
+                         Fecha == "Junio" ~ "06",
+                         Fecha == "Julio" ~ "07",
+                         Fecha == "Agosto" ~ "08",
+                         Fecha == "Septiembre" ~ "09",
+                         Fecha == "Octubre" ~ "10",
+                         Fecha == "Noviembre" ~ "11",
+                         Fecha == "Diciembre" ~ "12"),
+         Anio = case_when(
+                        row_number() <= 12 ~ 2016,
+                        row_number() > 12+1 & row_number() <= (12*2)+1 ~ 2017,
+                        row_number() >(12*2)+2 & row_number() <= (12*3)+2 ~ 2018,
+                        row_number() > (12*3)+3 & row_number() <= (12*4)+3 ~ 2019,
+                        row_number() > (12*4)+4 & row_number() <= (12*5)+4 ~ 2020,
+                        row_number() > (12*5)+5 & row_number() <= (12*6)+5 ~ 2021,
+                        row_number() > (12*6)+6 & row_number() <= (12*7)+6 ~ 2022,
+                        row_number() > (12*7)+7 & row_number() <= (12*8)+7 ~ 2023,
+                        row_number() > (12*8)+8 & row_number() <= (12*9)+8 ~ 2024,
+                        row_number() > (12*9)+9 & row_number() <= (12*10)+9 ~ 2025
+                           ),
+         AnioMes = paste(Anio, Mes, sep = "-"),
+         CBT_CABA = as.integer(CBT_CABA)
+         ) %>% 
+  filter(!is.na(CBT_CABA))
+
+#DEJO UNA SOLA TABLA DE CABA CON MISMA ESTRUCTURA QUE BASE INDEC
+CBAu  <-  CABA_CBA[4:113,] %>% select(AnioMes, Anio, Mes, CBA_CABA)
+CBTu  <-  CABA_CBT[4:113,] %>% select(AnioMes, Anio, Mes, CBT_CABA)
+
+CABA_Canastas <- left_join(CBAu, CBTu, by = c("AnioMes", "Anio", "Mes")) %>% 
+  mutate(Fecha = AnioMes, 
+         Mes = as.numeric(Mes)) %>% 
+  select(Fecha, Anio, Mes, CBA_CABA, CBT_CABA)
+
+  
+
+```
+
+4)  Unimos las bases de INDEC y CABA mediante la función left_join() y creamos nuevas variables calculando la diferencia entre los valores de ambos organismos. Generamos una tabla mediante la función gt() que permita visualizar los valores.
+
+```{r}
+
+baseunica <- left_join(INDEC, CABA_Canastas, by = "Fecha") %>% 
+  select(Fecha, Anio, Mes, CBA_INDEC,CBA_CABA, CBT_INDEC, CBT_CABA) %>%
+  mutate(Dif_CBA = round((((CBA_CABA/CBA_INDEC)-1)*100),2),
+         Dif_CBT = round((((CBT_CABA/CBT_INDEC)-1)*100),2),
+         Fecha = ym(Fecha),
+         Fecha2 = as.factor(as.yearmon(Fecha)), 
+         Anio = as.factor(year(Fecha)))
+
+baseunica <- baseunica[92:110,] 
+
+tabla <-  baseunica %>%
+  select(Anio, Mes, CBA_INDEC, CBA_CABA, Dif_CBA, CBT_INDEC, CBT_CABA, Dif_CBT) %>% 
+  gt() %>% 
+  fmt_number(
+    columns = c(CBA_INDEC, CBA_CABA, CBT_INDEC, CBT_CABA),
+    decimals = 0,
+    use_seps = TRUE,
+    sep_mark = ".",
+  ) %>% 
+  cols_label(
+     Anio = "Año" ,
+     CBA_INDEC = "CBA INDEC",
+     CBA_CABA = "CBA CABA",
+     Dif_CBA = "DIF % CBA",
+     CBT_INDEC = "CBT INDEC",
+     CBT_CABA = "CBT CABA",
+     Dif_CBT = "DIF % CBT",
+  ) %>% 
+  tab_footnote(
+    footnote = "DIF % CBA = Diferencia porcentual entre el valor de la CBA CABA y la CBA INDEC",
+    locations = cells_column_labels(columns = Dif_CBA)) %>% 
+  tab_footnote(
+    footnote = "DIF % CBT = Diferencia porcentual entre el valor de la CBT CABA y la CBT INDEC",
+    locations = cells_column_labels(columns = Dif_CBT)) %>% 
+gt_theme_pff()
+
+
+tabla
+
+```
+
+### Visualización de la información con ggplot() y al menos uno o dos gráficos con el geom\_ a elección (de los que vimos: geom_histogram(), geom_col(), geom_line() y geom_point()).
+
+5)  Para graficar las diferencias existentes debemos realizar una transformación previa mediante la función pivot_longer(), de manera tal que me quede una columna con los valores de las canastas y otra columna que indique a que organismo pertenecen. Luego realizo dos gráficos:
+
+-   Gráfico que muestra la evolución de los valores de ambas Canastas según INDEC y CABA
+
+```{r grafico evolución}
+
+gr1a <- baseunica %>% 
+  select(Fecha2, CBA_INDEC, CBA_CABA) %>% 
+  pivot_longer(cols = c(CBA_INDEC, CBA_CABA), names_to = "Fuente", values_to = "Valor_CBA") %>% 
+ mutate(Fuente = case_when( Fuente == "CBA_INDEC" ~ "INDEC",
+                            Fuente == "CBA_CABA" ~ "CABA"))
+
+gr1b <- baseunica %>% 
+  select(Fecha2, CBT_INDEC, CBT_CABA) %>% 
+  pivot_longer(cols = c(CBT_INDEC, CBT_CABA), names_to = "Fuente", values_to = "Valor_CBT") %>% 
+  mutate(Fuente = case_when(Fuente == "CBT_INDEC" ~ "INDEC",
+                            Fuente == "CBT_CABA" ~ "CABA"))
+
+gr1 <- left_join(gr1a, gr1b, by=c("Fecha2", "Fuente")) 
+
+GrCBA <- gr1 %>%
+  ggplot(aes(x=Fecha2, y=Valor_CBA, group=Fuente, color=Fuente)) +
+    geom_line(size=1, alpha=0.9) +
+    #scale_color_viridis(discrete = T) +
+    ggtitle("Evolución CBA") +
+    theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90), axis.text.y = element_blank())+
+  theme(legend.position = "bottom", legend.text = element_text(size = 6, colour = "grey3"))+
+  ylab("Valor CBA")+
+  xlab("Mes y Año")+
+  geom_label(colour = "grey2",
+    aes(label = format(Valor_CBA, big.mark = ".")), 
+    size = 3,
+    fontface = "bold",
+    label.size = 0,angle = 90,
+      )
+GrCBA
+
+
+GrCBT <- gr1 %>%
+  ggplot(aes(x=Fecha2, y=Valor_CBT, group=Fuente, color=Fuente)) +
+    geom_line(size=1, alpha=0.9) +
+    #scale_color_viridis(discrete = T) +
+    ggtitle("Evolución CBT") +
+    theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90), axis.text.y = element_blank())+
+  theme(legend.position = "bottom", legend.text = element_text(size = 6, colour = "grey3"))+
+  ylab("Valor CBT")+
+  xlab("Mes y Año")+
+  geom_label(colour = "grey2",
+    aes(label = format(Valor_CBA, big.mark = ".")), 
+    size = 3,
+    fontface = "bold",
+    label.size = 0,angle = 90,
+      )
+GrCBT
+
+#gr_CBT <- baseunica %>% 
+#ggplot(aes(Fecha2, CBT_CABA)) +
+ # geom_point(size=5, alpha=0.9, color="#69b3a2") +
+  #geom_point(aes(y=CBT_INDEC), color="#FC4E07", size=5, alpha=0.9) +
+  #geom_line(aes(x= Fecha2, y=CBT_INDEC), color="grey", size=1, alpha=0.9) +
+  #geom_line(aes(x= Fecha2, y=CBT_CABA), color="grey", size=1, alpha=0.9) +
+  #theme_minimal()+
+  #theme(axis.text.x = element_text(angle = 90)) +
+  #ggtitle("Evolución CBT INDEC y CABA")
+
+
+```
+
+-   Gráfico que muestra la evolución de las diferencias porcentuales entre los dos calculos:
+
+```{r GRAFICO DIFERENCIAS}
+
+gr2 <- baseunica %>% 
+  select(Fecha2, Dif_CBA, Dif_CBT) %>% 
+  pivot_longer(cols = c(Dif_CBA, Dif_CBT), names_to = "Canasta", values_to = "Valor") %>% 
+ggplot( aes(x = Fecha2, y = Valor, fill = Canasta)) +
+  geom_bar(stat ="identity", position = "dodge") +
+  scale_fill_viridis(discrete =TRUE, name = "") +
+    theme_minimal() +
+  ylab("Dif % Canastas CABA / INDEC") +
+  xlab("Mes y Año") +
+  theme(legend.position = "bottom", legend.text = element_text(size = 7, colour = "grey3")) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  geom_label(
+    aes(label = Valor), 
+    size = 3,
+    fontface = "bold",
+    fill = "white", label.size = 0,angle = 90
+  )
+  
+  #geom_text(aes(label = round(Valor), vjust = 1))
+
+gr2
+
+```
+
+## Comentarios a modo de conclusión respecto a los resultados obtenidos, tanto en lo que refiere a la información producida como a lo enfrentado durante el procesamiento de datos.
+
+Este primer análisis exploratorio justifica el avance y profundización de las diferencias metodológicas entre ambos organismos.
+
+En primer lugar advertimos q los valores de la CBA y la CBT difieren significativamente. Más allá de las diferencias regionales que puedan existir en terminos de precios de los productos que lo componen, resulta llamativa que la diferencia sea tan amplia. A fin de indagar que factores explican las disparidades cuantificadas, resulta necesario profundizar el análisis comparativo identificando cual es la metodología empleada en la conformación de las canastas en cuestión: requerimientos calóricos a cubir en cada caso, canastas de alimentos que cubren estas necesidades, relación CBA / CBT (Coeficiente de Engel).
+
+En segundo lugar la diferencia existente entre ambas organismos es variable a lo largo del periodo analizado. Esto nos invita a indagar en torno a si la variación en las diferencias se debe a la utilización de diferentes IPC para su actualización o se explica en variaciones de precios regionales.
